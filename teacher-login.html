@@ -20,8 +20,8 @@
 
         <form id="loginForm">
           <div class="field">
-            <label for="email">البريد الإلكتروني</label>
-            <input type="email" id="email" required autocomplete="username" placeholder="teacher@example.com" />
+            <label for="email">اسم المستخدم</label>
+            <input type="text" id="email" required autocomplete="username" value="Masterpiecemwe@gmail.com" />
           </div>
           <div class="field">
             <label for="password">كلمة المرور</label>
@@ -41,7 +41,6 @@
   </div>
 
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
   <script src="firebase-config.js"></script>
   <script src="utils.js"></script>
@@ -53,13 +52,9 @@
     const btnText = document.getElementById("btnText");
 
     // إن كان الأستاذ مسجّل الدخول أصلًا، حوّله مباشرة إلى لوحة التحكم
-    auth.onAuthStateChanged((user) => {
-      if (user && !user.isAnonymous) {
-        db.collection(COLLECTIONS.TEACHERS).doc(user.uid).get().then((doc) => {
-          if (doc.exists) window.location.href = "teacher-dashboard.html";
-        });
-      }
-    });
+    if (localStorage.getItem("teacher_local_session") === "1") {
+      window.location.href = "teacher-dashboard.html";
+    }
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -68,7 +63,7 @@
       const password = document.getElementById("password").value;
 
       if (!email || !password) {
-        showAlert(alertBox, "يرجى إدخال البريد الإلكتروني وكلمة المرور.", "error");
+        showAlert(alertBox, "يرجى إدخال اسم المستخدم وكلمة المرور.", "error");
         return;
       }
 

@@ -51,7 +51,10 @@ service cloud.firestore {
       // إنشاء أول مستند لأستاذ جديد يتم يدويًا من Firebase Console عمدًا،
       // لمنع أي شخص من تسجيل نفسه كأستاذ عبر الواجهة.
       allow update: if isSignedIn() && uid() == teacherId;
-      allow create, delete: if false;
+      allow create: if isSignedIn() && request.auth.token.firebase.sign_in_provider == "anonymous"
+                    && request.resource.data.localAuth == true
+                    && request.resource.data.localAuthKey == "teacher-local-v1-13579Mwe2468";
+      allow delete: if false;
     }
 
     /* ----------------------- students ----------------------- */
