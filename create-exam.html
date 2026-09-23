@@ -86,7 +86,10 @@
         <div class="card hidden" id="questionsSection">
           <div class="flex-between">
             <h3 class="mb-0">أسئلة الامتحان (<span id="qCount">0</span>)</h3>
-            <button class="btn btn-primary btn-sm" id="addQuestionBtn">+ إضافة سؤال</button>
+            <div class="flex gap-8" style="flex-wrap:wrap;">
+              <button class="btn btn-outline btn-sm" id="bulkQuestionsBtn">✍️ كتابة عدة أسئلة دفعة واحدة</button>
+              <button class="btn btn-primary btn-sm" id="addQuestionBtn">+ إضافة سؤال</button>
+            </div>
           </div>
           <div id="questionsList" class="mt-16"></div>
           <div class="empty-state hidden" id="noQuestions">لا توجد أسئلة بعد. ابدأ بإضافة سؤال جديد.</div>
@@ -152,6 +155,34 @@
     </div>
   </div>
 
+  <!-- كتابة الأسئلة دفعة واحدة -->
+  <div id="bulkModal" class="modal-backdrop hidden">
+    <div class="modal" style="max-width:720px; max-height:92vh; overflow:auto;">
+      <h3>كتابة الأسئلة دفعة واحدة</h3>
+      <div id="bulkAlert" class="hidden"></div>
+      <p class="small muted">اكتب كل سؤال في فقرة مستقلة، وافصل بين الأسئلة بسطر فارغ. يتم التعرّف على نوع السؤال تلقائيًا، وتظهر المعاينة أسفل الصندوق أثناء الكتابة.</p>
+      <details class="mt-8" style="margin-bottom:12px;">
+        <summary style="cursor:pointer; font-weight:600;">طريقة الكتابة</summary>
+        <div class="small mt-8" style="line-height:1.9;">
+          <div><strong>اختيار من متعدد:</strong> أربعة اختيارات A–D، وضع <span class="ltr">*</span> في نهاية الاختيار الصحيح (أو سطر <span class="ltr">Answer: B</span>).</div>
+          <div><strong>صح / خطأ:</strong> سطر <span class="ltr">TF: true</span> أو <span class="ltr">TF: false</span>.</div>
+          <div><strong>إجابة قصيرة:</strong> سطر <span class="ltr">Answer: went, Went</span> (الإجابات المقبولة مفصولة بفاصلة).</div>
+          <div><strong>مقالي / كتابة:</strong> سطر <span class="ltr">Essay</span>.</div>
+          <div><strong>الدرجة:</strong> سطر <span class="ltr">Points: 2</span> (اختياري، والافتراضي 1).</div>
+        </div>
+      </details>
+      <div class="field">
+        <textarea id="bulkText" class="ltr" style="min-height:240px; font-family:ui-monospace,Consolas,monospace;" placeholder="What is the capital of France?&#10;A) Berlin&#10;B) Paris *&#10;C) Madrid&#10;D) Rome"></textarea>
+      </div>
+      <div id="bulkPreview"></div>
+      <div class="actions">
+        <button class="btn btn-outline btn-sm" id="bulkSampleBtn" style="margin-inline-end:auto;">إدراج مثال</button>
+        <button class="btn btn-outline" id="bulkCancelBtn">إلغاء</button>
+        <button class="btn btn-primary" id="bulkAddBtn" disabled>إضافة الأسئلة</button>
+      </div>
+    </div>
+  </div>
+
   <div id="confirmModal" class="modal-backdrop hidden">
     <div class="modal">
       <h3 id="confirmTitle">تأكيد</h3>
@@ -162,11 +193,7 @@
       </div>
     </div>
   </div>
-
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-  <script src="firebase-config.js"></script>
+  <script src="local-db.js"></script>
   <script src="utils.js"></script>
   <script src="auth.js"></script>
   <script src="teacher.js"></script>

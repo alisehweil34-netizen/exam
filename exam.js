@@ -154,9 +154,9 @@ function showSubmitted(message) {
     }
 
     // احسب موعد الانتهاء الموثوق بناءً على startedAt القادم من الخادم
-    const startedAtMs = state.attempt.startedAt.toDate().getTime();
+    const startedAtMs = toMs(state.attempt.startedAt);
     const durationMs = state.exam.durationMinutes * 60 * 1000;
-    const examEndMs = state.exam.endAt.toDate ? state.exam.endAt.toDate().getTime() : new Date(state.exam.endAt).getTime();
+    const examEndMs = toMs(state.exam.endAt);
     state.endsAt = new Date(Math.min(startedAtMs + durationMs, examEndMs));
 
     if (Date.now() >= state.endsAt.getTime()) {
@@ -175,7 +175,7 @@ function showSubmitted(message) {
     els.shell.classList.remove("hidden");
   } catch (err) {
     console.error(err);
-    showBlocked("حدث خطأ", translateFirebaseError(err));
+    showBlocked("حدث خطأ", translateError(err));
   }
 })();
 
@@ -423,7 +423,7 @@ function logViolation(type) {
   db.collection(COLLECTIONS.ATTEMPTS)
     .doc(state.attemptId)
     .update({
-      violationCount: firebase.firestore.FieldValue.increment(1),
+      violationCount: localIncrement(1),
       lastActivityAt: serverTimestamp(),
     })
     .catch((err) => console.warn("تعذّر تحديث عدّاد المخالفات", err));

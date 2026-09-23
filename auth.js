@@ -1,130 +1,78 @@
-/**
- * auth.js
- * دخول الأستاذ محليًا (لا يتم التحقق من اسم المستخدم/كلمة المرور عبر
- * Firebase Authentication). يبقى Firebase/Firestore مستخدمًا للطلاب
- * والامتحانات، وتُنشأ جلسة Anonymous تقنية للأستاذ حتى تستمر قواعد
- * Firestore في العمل.
- */
+/* Local authentication and route guards. No external authentication service. */
+const TEACHER_USERNAME = "Masterpiecemwe@gmail.com";
+const TEACHER_DEFAULT_PASSWORD = "13579Mwe2468";
+const TEACHER_SESSION_KEY = "exam_teacher_session";
+const STUDENT_SESSION_KEY = "exam_student_session";
 
-const LOCAL_TEACHER_USERNAME = "Masterpiecemwe@gmail.com";
-const LOCAL_TEACHER_PASSWORD = "13579Mwe2468";
-const LOCAL_TEACHER_NAME = "الأستاذ";
-const LOCAL_TEACHER_KEY = "teacher-local-v1-13579Mwe2468";
-
-async function teacherLogin(username, password) {
-  if (username.trim().toLowerCase() !== LOCAL_TEACHER_USERNAME.toLowerCase() || password !== LOCAL_TEACHER_PASSWORD) {
-    throw { code: "auth/invalid-credential", message: "اسم المستخدم أو كلمة المرور غير صحيحة." };
+function getTeacherRecord() {
+  const saved = localStorage.getItem("exam_teacher_record");
+  if (saved) {
+    try { return JSON.parse(saved); } catch {}
   }
-
-  // Firebase ليس مسؤولًا عن تسجيل دخول الأستاذ؛ هذه الجلسة المجهولة
-  // تستخدم فقط للحصول على uid يمكن لقواعد Firestore ربطه بمستند الأستاذ.
-  let cred;
-  try {
-    cred = auth.currentUser ? { user: auth.currentUser } : await auth.signInAnonymously();
-  } catch (err) {
-    // تسجيل الأستاذ محلي، لكن Firestore يحتاج هوية Firebase تقنية لحماية البيانات.
-    // إذا كان Anonymous Authentication غير مفعّل، أظهر رسالة واضحة بدل رسالة صلاحيات عامة.
-    if (err?.code === "auth/operation-not-allowed" || err?.code === "auth/admin-restricted-operation") {
-      throw {
-        code: "auth/anonymous-disabled",
-        message: "تسجيل الأستاذ محليًا جاهز، لكن يجب تفعيل Anonymous Authentication في Firebase Console حتى تتمكن لوحة الأستاذ من الوصول الآمن إلى الامتحانات."
-      };
-    }
-    throw err;
-  }
-  const uid = cred.user.uid;
-
-  await db.collection(COLLECTIONS.TEACHERS).doc(uid).set({
-    name: LOCAL_TEACHER_NAME,
-    email: LOCAL_TEACHER_USERNAME,
-    role: "teacher",
-    localAuth: true,
-    localAuthKey: LOCAL_TEACHER_KEY,
-    updatedAt: serverTimestamp(),
-  }, { merge: true });
-
-  localStorage.setItem("teacher_local_session", "1");
-  localStorage.setItem("teacher_local_uid", uid);
-  return { uid, name: LOCAL_TEACHER_NAME, email: LOCAL_TEACHER_USERNAME };
+  const record = { uid: "teacher-local-1", email: TEACHER_USERNAME, name: "الأستاذ", password: TEACHER_DEFAULT_PASSWORD };
+  localStorage.setItem("exam_teacher_record", JSON.stringify(record));
+  return record;
 }
+const auth = {
+  currentUser: null,
+  onAuthStateChanged(callback) {
+    const uid = localStorage.getItem(TEACHER_SESSION_KEY);
+    const studentUid = localStorage.getItem(STUDENT_SESSION_KEY);
+    if (uid === "1") {
+      const record = getTeacherRecord();
+      this.currentUser = { uid: record.uid, email: record.email, isAnonymous: false };
+    } else if (studentUid) {
+      this.currentUser = { uid: studentUid, isAnonymous: true };
+    } else {
+      this.currentUser = null;
+    }
+    if (typeof callback === "function") callback(this.currentUser);
+    return () => {};
+  }
+};
 
-async function teacherLogout() {
-  localStorage.removeItem("teacher_local_session");
-  localStorage.removeItem("teacher_local_uid");
-  try { await auth.signOut(); } catch (_) {}
+function teacherLogin(username, password) {
+  const record = getTeacherRecord();
+  if (username.trim().toLowerCase() !== record.email.toLowerCase() || password !== record.password) {
+    throw { code: "auth/wrong-password", message: "اسم المستخدم أو كلمة المرور غير صحيحة." };
+  }
+  localStorage.setItem(TEACHER_SESSION_KEY, "1");
+  auth.currentUser = { uid: record.uid, email: record.email, isAnonymous: false };
+  return { uid: record.uid, email: record.email, name: record.name };
+}
+function teacherLogout() {
+  localStorage.removeItem(TEACHER_SESSION_KEY);
   window.location.href = "teacher-login.html";
 }
-
-async function changeTeacherDisplayName(newName) {
-  const uid = localStorage.getItem("teacher_local_uid");
-  if (!uid || localStorage.getItem("teacher_local_session") !== "1") throw new Error("لا توجد جلسة أستاذ نشطة.");
-  await db.collection(COLLECTIONS.TEACHERS).doc(uid).update({ name: newName });
+function changeTeacherDisplayName(newName) {
+  const record = getTeacherRecord();
+  record.name = newName;
+  localStorage.setItem("exam_teacher_record", JSON.stringify(record));
 }
-
-async function changeTeacherPassword() {
-  throw { code: "auth/local-password-change-disabled", message: "كلمة مرور الأستاذ محددة من إعدادات الموقع." };
+function changeTeacherPassword(currentPassword, newPassword) {
+  const record = getTeacherRecord();
+  if (record.password !== currentPassword) throw { code: "auth/wrong-password", message: "كلمة المرور الحالية غير صحيحة." };
+  record.password = newPassword;
+  localStorage.setItem("exam_teacher_record", JSON.stringify(record));
 }
-
 function guardTeacherPage(onReady) {
-  if (localStorage.getItem("teacher_local_session") !== "1") {
+  if (localStorage.getItem(TEACHER_SESSION_KEY) !== "1") {
     window.location.href = "teacher-login.html";
     return;
   }
-
-  const storedUid = localStorage.getItem("teacher_local_uid");
-  const continueWithTeacher = async () => {
-    try {
-      let user = auth.currentUser;
-      if (!user) {
-        try {
-          user = (await auth.signInAnonymously()).user;
-        } catch (err) {
-          console.error("Anonymous Authentication is required for the teacher dashboard:", err);
-          window.location.href = "teacher-login.html?setup=anonymous";
-          return;
-        }
-      }
-      if (storedUid && user.uid !== storedUid) {
-        localStorage.removeItem("teacher_local_session");
-        localStorage.removeItem("teacher_local_uid");
-        window.location.href = "teacher-login.html";
-        return;
-      }
-      const uid = user.uid;
-      localStorage.setItem("teacher_local_uid", uid);
-      const doc = await db.collection(COLLECTIONS.TEACHERS).doc(uid).get();
-      if (!doc.exists || doc.data().localAuth !== true) {
-        localStorage.removeItem("teacher_local_session");
-        window.location.href = "teacher-login.html";
-        return;
-      }
-      onReady({ uid, ...doc.data() });
-    } catch (err) {
-      console.error(err);
-      localStorage.removeItem("teacher_local_session");
-      localStorage.removeItem("teacher_local_uid");
-      window.location.href = "teacher-login.html";
-    }
-  };
-
-  continueWithTeacher();
+  const record = getTeacherRecord();
+  onReady({ uid: record.uid, email: record.email, name: record.name });
 }
-
-/* ============================ الطالب ============================ */
-async function ensureStudentSession() {
-  if (auth.currentUser) return auth.currentUser;
-  const cred = await auth.signInAnonymously();
-  return cred.user;
+function ensureStudentSession() {
+  let uid = localStorage.getItem(STUDENT_SESSION_KEY);
+  if (!uid) {
+    uid = "student-" + simpleId();
+    localStorage.setItem(STUDENT_SESSION_KEY, uid);
+  }
+  auth.currentUser = { uid, isAnonymous: true };
+  return { uid, isAnonymous: true };
 }
-
-async function upsertStudentProfile(uid, fullName) {
-  await db.collection(COLLECTIONS.STUDENTS).doc(uid).set(
-    { fullName, lastSeenAt: serverTimestamp() },
-    { merge: true }
-  );
+function upsertStudentProfile(uid, fullName) {
+  return db.collection(COLLECTIONS.STUDENTS).doc(uid).set({ fullName, lastSeenAt: serverTimestamp() }, {merge:true});
 }
-
-async function guardStudentSession() {
-  await ensureStudentSession();
-  return auth.currentUser;
-}
+function guardStudentSession() { return ensureStudentSession(); }

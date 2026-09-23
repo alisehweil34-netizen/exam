@@ -21,7 +21,7 @@
         <form id="loginForm">
           <div class="field">
             <label for="email">اسم المستخدم</label>
-            <input type="text" id="email" required autocomplete="username" value="Masterpiecemwe@gmail.com" />
+            <input type="text" id="email" required autocomplete="username" placeholder="Masterpiecemwe@gmail.com" />
           </div>
           <div class="field">
             <label for="password">كلمة المرور</label>
@@ -39,11 +39,7 @@
       </div>
     </div>
   </div>
-
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-  <script src="firebase-config.js"></script>
+  <script src="local-db.js"></script>
   <script src="utils.js"></script>
   <script src="auth.js"></script>
   <script>
@@ -53,13 +49,11 @@
     const btnText = document.getElementById("btnText");
 
     // إن كان الأستاذ مسجّل الدخول أصلًا، حوّله مباشرة إلى لوحة التحكم
-    if (new URLSearchParams(location.search).get("setup") === "anonymous") {
-      showAlert(alertBox, "الدخول محلي، لكن لوحة الأستاذ تحتاج Anonymous Authentication في Firebase للوصول الآمن إلى الامتحانات. من Firebase Console: Authentication → Sign-in method → Anonymous → Enable.", "error");
-    }
-
-    if (localStorage.getItem("teacher_local_session") === "1") {
-      window.location.href = "teacher-dashboard.html";
-    }
+    auth.onAuthStateChanged((user) => {
+      if (user && !user.isAnonymous) {
+        window.location.href = "teacher-dashboard.html";
+      }
+    });
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -80,7 +74,7 @@
         window.location.href = "teacher-dashboard.html";
       } catch (err) {
         console.error(err);
-        showAlert(alertBox, translateFirebaseError(err), "error");
+        showAlert(alertBox, translateError(err), "error");
         submitBtn.disabled = false;
         btnText.textContent = "تسجيل الدخول";
       }

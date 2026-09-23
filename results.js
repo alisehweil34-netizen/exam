@@ -49,7 +49,7 @@ guardTeacherPage(async (teacher) => {
     document.getElementById("backToListBtn").addEventListener("click", showListView);
   } catch (err) {
     console.error(err);
-    showAlert(alertBox, translateFirebaseError(err), "error");
+    showAlert(alertBox, translateError(err), "error");
   }
 });
 
@@ -62,7 +62,8 @@ async function loadAttempts() {
 }
 
 function tsMsSafe(v) {
-  return v?.toDate ? v.toDate().getTime() : 0;
+  const ms = toMs(v);
+  return isNaN(ms) ? 0 : ms;
 }
 
 function renderStats() {
@@ -157,7 +158,7 @@ async function runAutoGrade() {
     showAlert(document.getElementById("alertBox"), "تم تصحيح جميع الأسئلة الموضوعية بنجاح.", "success");
   } catch (err) {
     console.error(err);
-    showAlert(document.getElementById("alertBox"), translateFirebaseError(err), "error");
+    showAlert(document.getElementById("alertBox"), translateError(err), "error");
   } finally {
     btn.disabled = false;
     btn.textContent = "تصحيح تلقائي للأسئلة الموضوعية";

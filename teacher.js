@@ -5,20 +5,12 @@
  *   2) create-exam.html      — إنشاء/تعديل امتحان وإدارة أسئلته والإجابة الصحيحة
  *
  * كل الوظائف هنا تفترض أن guardTeacherPage نجحت بالفعل، لكنها لا تعتمد
- * عليها وحدها كحماية: أي محاولة كتابة غير مصرّح بها سترفضها Firebase
+ * عليها وحدها كحماية: أي محاولة كتابة غير مصرّح بها سترفضها الخدمة السحابية
  * Security Rules من جهة الخادم أيضًا.
  */
 
 let currentTeacher = null;
 
-guardTeacherPage((teacher) => {
-  currentTeacher = teacher;
-  const chip = document.getElementById("userChip");
-  if (chip) chip.textContent = `${teacher.name || teacher.email} 👋`;
-
-  if (document.getElementById("statGrid")) initDashboardPage();
-  if (document.getElementById("examForm")) initCreateExamPage();
-});
 
 /* ======================================================================
    1) لوحة التحكم
@@ -70,7 +62,7 @@ async function initDashboardPage() {
     exams.forEach((exam) => tbody.appendChild(buildExamRow(exam)));
   } catch (err) {
     console.error(err);
-    showAlert(alertBox, translateFirebaseError(err), "error");
+    showAlert(alertBox, translateError(err), "error");
   }
 }
 
@@ -177,7 +169,7 @@ function openConfirm(title, message, onConfirm) {
       await onConfirm();
     } catch (err) {
       console.error(err);
-      alert(translateFirebaseError(err));
+      alert(translateError(err));
       modal.classList.add("hidden");
     }
   });
@@ -213,7 +205,7 @@ function wireLogoutAndAccount() {
       document.getElementById("userChip").textContent = `${newName} 👋`;
       showAlert(alertEl, "تم تحديث الاسم بنجاح.", "success");
     } catch (err) {
-      showAlert(alertEl, translateFirebaseError(err), "error");
+      showAlert(alertEl, translateError(err), "error");
     }
   });
 
@@ -229,7 +221,7 @@ function wireLogoutAndAccount() {
       document.getElementById("currentPasswordInput").value = "";
       document.getElementById("newPasswordInput").value = "";
     } catch (err) {
-      showAlert(alertEl, translateFirebaseError(err), "error");
+      showAlert(alertEl, translateError(err), "error");
     }
   });
 }
@@ -263,12 +255,13 @@ async function initCreateExamPage() {
       document.getElementById("questionsSection").classList.remove("hidden");
       await loadQuestions();
     } catch (err) {
-      showAlert(alertBox, translateFirebaseError(err), "error");
+      showAlert(alertBox, translateError(err), "error");
     }
   }
 
   wireExamForm();
   wireQuestionModal();
+  wireBulkModal();
 }
 
 function toLocalInputValue(tsOrDate) {
@@ -337,8 +330,8 @@ function wireExamForm() {
         description,
         examCode,
         status,
-        startAt: firebase.firestore.Timestamp.fromDate(startAt),
-        endAt: firebase.firestore.Timestamp.fromDate(endAt),
+        startAt: startAt,
+        endAt: endAt,
         durationMinutes,
         allowShowAnswers,
         teacherId: currentTeacher.uid,
@@ -358,7 +351,7 @@ function wireExamForm() {
       saveBtn.textContent = "حفظ بيانات الامتحان";
     } catch (err) {
       console.error(err);
-      showAlert(alertBox, translateFirebaseError(err), "error");
+      showAlert(alertBox, translateError(err), "error");
       saveBtn.disabled = false;
       saveBtn.textContent = "حفظ بيانات الامتحان";
     }
@@ -572,6 +565,253 @@ async function saveQuestion() {
     await loadQuestions();
   } catch (err) {
     console.error(err);
-    showAlert(alertEl, translateFirebaseError(err), "error");
+    showAlert(alertEl, translateError(err), "error");
   }
 }
+
+
+/* ======================================================================
+   3) كتابة الأسئلة دفعة واحدة
+   ====================================================================== */
+
+const BULK_SAMPLE = `What is the capital of France?
+A) Berlin
+B) Paris *
+C) Madrid
+D) Rome
+Points: 2
+
+The sun rises in the west.
+TF: false
+
+Write the past tense of "go".
+Answer: went
+
+Write a short paragraph about your daily routine.
+Essay
+Points: 5`;
+
+const BULK_RX = {
+  points: /^(?:points?|score|marks?|الدرجة|درجة|الدرجات)\s*[:：=]\s*(\S+)\s*$/i,
+  tf: /^(?:tf|true\s*\/\s*false|صح\s*\/\s*خطأ)\s*[:：=]\s*(.+)$/i,
+  answer: /^(?:answers?|correct|الإجابة الصحيحة|الإجابة|الاجابة|الإجابات|الاجابات)\s*[:：=]\s*(.+)$/i,
+  essay: /^(?:essay|مقالي)$/i,
+  option: /^\(?([A-Da-d])[).:]\s*(\S.*)$/,
+};
+
+function parseBulkTf(v) {
+  const x = String(v).trim().toLowerCase();
+  if (["true", "t", "yes", "صح", "صحيح"].includes(x)) return "true";
+  if (["false", "f", "no", "خطأ", "خطا"].includes(x)) return "false";
+  return null;
+}
+
+/**
+ * يحوّل النص الحر إلى أسئلة. الأسئلة تُفصل بسطر فارغ.
+ * يعيد { questions: [...], errors: [...] } — لا يُضاف شيء إذا وُجدت أخطاء.
+ */
+function parseBulkQuestions(raw) {
+  const text = String(raw || "").replace(/\r\n?/g, "\n").trim();
+  const questions = [];
+  const errors = [];
+  if (!text) return { questions, errors };
+
+  let n = 0;
+  text.split(/\n[ \t]*\n/).forEach((block) => {
+    const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (!lines.length) return;
+    n++;
+
+    const textLines = [];
+    const opts = {};
+    let correct = null, tf = null, answers = null, essay = false, points = null;
+    let started = false, problem = null;
+
+    lines.forEach((line, i) => {
+      if (problem) return;
+      if (i > 0) {
+        let m;
+        if ((m = line.match(BULK_RX.points))) { points = Number(m[1]); started = true; return; }
+        if ((m = line.match(BULK_RX.tf))) {
+          tf = parseBulkTf(m[1]);
+          if (tf === null) problem = `قيمة صح/خطأ غير مفهومة "${m[1].trim()}" — اكتب true أو false.`;
+          started = true; return;
+        }
+        if ((m = line.match(BULK_RX.answer))) { answers = m[1].trim(); started = true; return; }
+        if (BULK_RX.essay.test(line)) { essay = true; started = true; return; }
+
+        let l = line, star = false;
+        if (l.startsWith("*")) { star = true; l = l.replace(/^\*+\s*/, ""); }
+        if ((m = l.match(BULK_RX.option))) {
+          let body = m[2].trim();
+          if (/\*+\s*$/.test(body)) { star = true; body = body.replace(/\s*\*+\s*$/, "").trim(); }
+          const key = m[1].toLowerCase();
+          if (opts[key] !== undefined) { problem = `الاختيار ${key.toUpperCase()} مكرر.`; return; }
+          if (!body) { problem = `الاختيار ${key.toUpperCase()} فارغ.`; return; }
+          opts[key] = body;
+          started = true;
+          if (star) {
+            if (correct && correct !== key) { problem = "تم وضع علامة * على أكثر من اختيار."; return; }
+            correct = key;
+          }
+          return;
+        }
+        if (started) { problem = `سطر غير مفهوم: "${line.slice(0, 40)}"`; return; }
+      }
+      textLines.push(line);
+    });
+
+    const label = `السؤال ${n} ("${lines[0].slice(0, 28)}${lines[0].length > 28 ? "…" : ""}")`;
+    const fail = (msg) => errors.push(`${label}: ${msg}`);
+    if (problem) return fail(problem);
+
+    // إزالة الترقيم من بداية السؤال: "1." أو "2)" أو "Q3:"
+    textLines[0] = textLines[0]
+      .replace(/^Q(?:uestion)?\s*\d*\s*[:.)]\s*/i, "")
+      .replace(/^\d+\s*[.)]\s*(?=\D)/, "");
+    const qText = textLines.join("\n").trim();
+    if (!qText) return fail("نص السؤال فارغ.");
+
+    const hasOpts = Object.keys(opts).length > 0;
+    const kinds = [
+      hasOpts && "mc",
+      tf !== null && "tf",
+      !hasOpts && answers !== null && "short",
+      essay && "essay",
+    ].filter(Boolean);
+    if (kinds.length === 0) return fail("لم يتم التعرّف على نوع السؤال. أضف اختيارات A–D، أو TF:، أو Answer:، أو Essay.");
+    if (kinds.length > 1) return fail("لا يمكن الجمع بين أكثر من نوع في سؤال واحد.");
+
+    if (points !== null && !(points > 0)) return fail("الدرجة يجب أن تكون رقمًا أكبر من صفر.");
+    const q = { type: null, text: qText, points: points === null ? 1 : points };
+
+    if (kinds[0] === "mc") {
+      if (!["a", "b", "c", "d"].every((k) => opts[k])) return fail("يجب كتابة أربعة اختيارات A و B و C و D.");
+      if (answers !== null) {
+        const letter = answers.trim().replace(/[).:]$/, "").toLowerCase();
+        if (!/^[a-d]$/.test(letter)) return fail("الإجابة الصحيحة يجب أن تكون حرفًا واحدًا من A إلى D.");
+        if (correct && correct !== letter) return fail("علامة * لا تتطابق مع سطر Answer.");
+        correct = letter;
+      }
+      if (!correct) return fail("حدّد الاختيار الصحيح بعلامة * أو بسطر Answer: B.");
+      q.type = "multiple_choice";
+      q.options = { a: opts.a, b: opts.b, c: opts.c, d: opts.d };
+      q.correct = correct;
+    } else if (kinds[0] === "tf") {
+      q.type = "true_false";
+      q.correct = tf;
+    } else if (kinds[0] === "short") {
+      const acceptable = answers.split(/[,،]/).map((x) => x.trim()).filter(Boolean);
+      if (!acceptable.length) return fail("أدخل إجابة صحيحة واحدة على الأقل.");
+      q.type = "short_answer";
+      q.acceptable = acceptable;
+    } else {
+      q.type = "essay";
+    }
+    questions.push(q);
+  });
+
+  return { questions, errors };
+}
+
+function describeBulkCorrect(q) {
+  // يعيد HTML جاهزًا؛ <bdi> يمنع اختلاط اتجاه الحروف اللاتينية داخل السطر العربي
+  const v = (t) => `<bdi>${escapeHtml(t)}</bdi>`;
+  if (q.type === "multiple_choice") return `الصحيح: ${v(q.correct.toUpperCase())}`;
+  if (q.type === "true_false") return `الصحيح: ${v(q.correct === "true" ? "True" : "False")}`;
+  if (q.type === "short_answer") return `مقبول: ${v(q.acceptable.join(" / "))}`;
+  return "تصحيح يدوي";
+}
+
+async function saveBulkQuestions(list) {
+  const start = examCtx.questions.length;
+  const batch = db.batch();
+  list.forEach((q, i) => {
+    const ref = db.collection(COLLECTIONS.QUESTIONS).doc();
+    const data = { examId: examCtx.examId, type: q.type, text: q.text, points: q.points, order: start + i };
+    if (q.type === "multiple_choice") data.options = q.options;
+    batch.set(ref, data);
+
+    let key = null;
+    if (q.type === "multiple_choice" || q.type === "true_false") key = { examId: examCtx.examId, correctAnswer: q.correct };
+    else if (q.type === "short_answer") key = { examId: examCtx.examId, acceptableAnswers: q.acceptable };
+    if (key) batch.set(db.collection(COLLECTIONS.ANSWER_KEYS).doc(ref.id), key);
+  });
+  await batch.commit();
+  await syncQuestionCount();
+  await loadQuestions();
+}
+
+function wireBulkModal() {
+  const openBtn = document.getElementById("bulkQuestionsBtn");
+  if (!openBtn) return;
+  const modal = document.getElementById("bulkModal");
+  const input = document.getElementById("bulkText");
+  const preview = document.getElementById("bulkPreview");
+  const alertEl = document.getElementById("bulkAlert");
+  const addBtn = document.getElementById("bulkAddBtn");
+  let parsed = [];
+
+  function render() {
+    const { questions, errors } = parseBulkQuestions(input.value);
+    parsed = errors.length ? [] : questions;
+    addBtn.disabled = parsed.length === 0;
+    addBtn.textContent = parsed.length ? `إضافة الأسئلة (${parsed.length})` : "إضافة الأسئلة";
+
+    let html = "";
+    if (errors.length) {
+      html += `<div class="alert alert-error"><div>يوجد ${errors.length === 1 ? "خطأ" : "أخطاء"} يجب تصحيحها قبل الإضافة:</div>` +
+        errors.map((e) => `<div class="small mt-8">• ${escapeHtml(e)}</div>`).join("") + `</div>`;
+    }
+    if (questions.length) {
+      const total = questions.reduce((sum, q) => sum + q.points, 0);
+      html += `<div class="muted mt-8">عدد الأسئلة: ${questions.length} — مجموع الدرجات: ${total}</div>`;
+      html += questions.map((q, i) => `
+        <div class="q-card" style="padding:10px 12px; margin:8px 0;">
+          <span class="badge badge-progress">${typeLabels[q.type]}</span>
+          <span class="muted small">— ${q.points} — ${describeBulkCorrect(q)}</span>
+          <div class="ltr small" style="direction:ltr; text-align:left; margin-top:6px;">${i + 1}. ${escapeHtml(q.text)}</div>
+        </div>`).join("");
+    }
+    preview.innerHTML = html;
+  }
+
+  openBtn.addEventListener("click", () => {
+    input.value = "";
+    clearAlert(alertEl);
+    render();
+    modal.classList.remove("hidden");
+    input.focus();
+  });
+  input.addEventListener("input", render);
+  document.getElementById("bulkSampleBtn").addEventListener("click", () => { input.value = BULK_SAMPLE; render(); });
+  document.getElementById("bulkCancelBtn").addEventListener("click", () => modal.classList.add("hidden"));
+
+  addBtn.addEventListener("click", async () => {
+    if (!parsed.length) return;
+    addBtn.disabled = true;
+    addBtn.textContent = "جاري الإضافة...";
+    try {
+      await saveBulkQuestions(parsed);
+      modal.classList.add("hidden");
+    } catch (err) {
+      console.error(err);
+      showAlert(alertEl, translateError(err), "error");
+      render();
+    }
+  });
+}
+
+/* ======================================================================
+   نقطة التشغيل — يجب أن تبقى في آخر الملف.
+   guardTeacherPage تستدعي الدالة فورًا (بدون انتظار)، فلو كانت في أعلى الملف
+   لحاولت initCreateExamPage استخدام examCtx قبل تعريفه (خطأ TDZ) وتعطّلت الصفحة.
+   ====================================================================== */
+guardTeacherPage((teacher) => {
+  currentTeacher = teacher;
+  const chip = document.getElementById("userChip");
+  if (chip) chip.textContent = `${teacher.name || teacher.email} 👋`;
+
+  if (document.getElementById("statGrid")) initDashboardPage();
+  if (document.getElementById("examForm")) initCreateExamPage();
+});

@@ -1,6 +1,6 @@
 /**
  * دوال مساعدة عامة تُستخدم في أكثر من صفحة.
- * يجب تحميل هذا الملف بعد firebase-config.js وقبل باقي ملفات الصفحة.
+ * يجب تحميل هذا الملف بعد local-db.js وقبل باقي ملفات الصفحة.
  */
 
 /** يعرض رسالة تنبيه داخل عنصر معيّن (success | error | warn | info) */
@@ -20,29 +20,19 @@ function clearAlert(containerEl) {
   containerEl.classList.add("hidden");
 }
 
-/** يترجم رسائل أخطاء Firebase الشائعة إلى نص عربي مفهوم */
-function translateFirebaseError(error) {
+/** تحويل الأخطاء المحلية إلى رسالة مفهومة */
+function translateError(error) {
   const code = error && error.code ? error.code : "";
   const map = {
-    "auth/invalid-email": "صيغة البريد الإلكتروني غير صحيحة.",
-    "auth/user-disabled": "تم تعطيل هذا الحساب.",
-    "auth/user-not-found": "لا يوجد حساب بهذا البريد الإلكتروني.",
-    "auth/wrong-password": "كلمة المرور غير صحيحة.",
-    "auth/invalid-credential": "بيانات الدخول غير صحيحة.",
-    "auth/too-many-requests": "محاولات كثيرة خاطئة، يرجى المحاولة لاحقًا.",
-    "auth/network-request-failed": "تعذر الاتصال بالخادم، تحقق من اتصال الإنترنت.",
-    "auth/requires-recent-login": "لأسباب أمنية، يرجى تسجيل الخروج والدخول مجددًا قبل تنفيذ هذا الإجراء.",
-    "auth/weak-password": "كلمة المرور ضعيفة جدًا، اختر كلمة مرور أقوى (6 أحرف على الأقل).",
-    "auth/anonymous-disabled": "تسجيل الأستاذ محلي، لكن يجب تفعيل Anonymous Authentication في Firebase Console حتى تعمل لوحة الأستاذ مع قاعدة بيانات الامتحانات.",
-    "auth/operation-not-allowed": "يجب تفعيل Anonymous Authentication في Firebase Console حتى تعمل لوحة الأستاذ.",
-    "auth/admin-restricted-operation": "يجب تفعيل Anonymous Authentication في Firebase Console حتى تعمل لوحة الأستاذ.",
-    "permission-denied": "ليست لديك صلاحية لتنفيذ هذا الإجراء. تأكد من نشر firestore.rules وتفعيل Anonymous Authentication.",
-    unavailable: "تعذر الاتصال بقاعدة البيانات، تحقق من اتصال الإنترنت.",
+    "auth/wrong-password": "اسم المستخدم أو كلمة المرور غير صحيحة.",
+    "auth/not-a-teacher": "هذا الحساب غير مسجّل كحساب أستاذ.",
+    "not-found": "العنصر المطلوب غير موجود.",
+    "permission-denied": "ليست لديك صلاحية لتنفيذ هذا الإجراء."
   };
   return map[code] || error?.message || "حدث خطأ غير متوقع، يرجى المحاولة مرة أخرى.";
 }
 
-/** تنسيق Firestore Timestamp أو Date إلى نص عربي مقروء */
+/** تنسيق قاعدة البيانات المحلية Timestamp أو Date إلى نص عربي مقروء */
 function formatDateTime(value) {
   if (!value) return "—";
   const date = value.toDate ? value.toDate() : new Date(value);
@@ -115,9 +105,15 @@ function applyAntiCheatUiRestrictions(rootEl) {
   document.body.classList.add("no-select");
 }
 
-/** يبني عنصر Timestamp من Firestore بأمان (server) */
+/** يحوّل أي قيمة تاريخ (Date أو نص أو كائن يحتوي toDate) إلى ميلي ثانية بأمان */
+function toMs(v) {
+  if (v && typeof v.toDate === "function") return v.toDate().getTime();
+  return new Date(v).getTime();
+}
+
+/** يبني عنصر Timestamp من قاعدة البيانات المحلية بأمان (server) */
 function serverTimestamp() {
-  return firebase.firestore.FieldValue.serverTimestamp();
+  return new Date();
 }
 
 /**

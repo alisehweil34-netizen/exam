@@ -93,7 +93,7 @@
       goToExam(examId);
     } catch (err) {
       console.error(err);
-      showAlert(alertBox, translateFirebaseError(err), "error");
+      showAlert(alertBox, translateError(err), "error");
       setLoading(false);
     }
   });
@@ -175,7 +175,7 @@
       `;
     } catch (err) {
       console.error(err);
-      root.innerHTML = `<div class="alert alert-error">${escapeHtml(translateFirebaseError(err))}</div>`;
+      root.innerHTML = `<div class="alert alert-error">${escapeHtml(translateError(err))}</div>`;
     }
   })();
 })();
