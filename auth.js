@@ -18,7 +18,20 @@ async function teacherLogin(username, password) {
 
   // Firebase ليس مسؤولًا عن تسجيل دخول الأستاذ؛ هذه الجلسة المجهولة
   // تستخدم فقط للحصول على uid يمكن لقواعد Firestore ربطه بمستند الأستاذ.
-  const cred = auth.currentUser ? { user: auth.currentUser } : await auth.signInAnonymously();
+  let cred;
+  try {
+    cred = auth.currentUser ? { user: auth.currentUser } : await auth.signInAnonymously();
+  } catch (err) {
+    // تسجيل الأستاذ محلي، لكن Firestore يحتاج هوية Firebase تقنية لحماية البيانات.
+    // إذا كان Anonymous Authentication غير مفعّل، أظهر رسالة واضحة بدل رسالة صلاحيات عامة.
+    if (err?.code === "auth/operation-not-allowed" || err?.code === "auth/admin-restricted-operation") {
+      throw {
+        code: "auth/anonymous-disabled",
+        message: "تسجيل الأستاذ محليًا جاهز، لكن يجب تفعيل Anonymous Authentication في Firebase Console حتى تتمكن لوحة الأستاذ من الوصول الآمن إلى الامتحانات."
+      };
+    }
+    throw err;
+  }
   const uid = cred.user.uid;
 
   await db.collection(COLLECTIONS.TEACHERS).doc(uid).set({
@@ -62,7 +75,15 @@ function guardTeacherPage(onReady) {
   const continueWithTeacher = async () => {
     try {
       let user = auth.currentUser;
-      if (!user) user = (await auth.signInAnonymously()).user;
+      if (!user) {
+        try {
+          user = (await auth.signInAnonymously()).user;
+        } catch (err) {
+          console.error("Anonymous Authentication is required for the teacher dashboard:", err);
+          window.location.href = "teacher-login.html?setup=anonymous";
+          return;
+        }
+      }
       if (storedUid && user.uid !== storedUid) {
         localStorage.removeItem("teacher_local_session");
         localStorage.removeItem("teacher_local_uid");

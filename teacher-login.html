@@ -53,6 +53,10 @@
     const btnText = document.getElementById("btnText");
 
     // إن كان الأستاذ مسجّل الدخول أصلًا، حوّله مباشرة إلى لوحة التحكم
+    if (new URLSearchParams(location.search).get("setup") === "anonymous") {
+      showAlert(alertBox, "الدخول محلي، لكن لوحة الأستاذ تحتاج Anonymous Authentication في Firebase للوصول الآمن إلى الامتحانات. من Firebase Console: Authentication → Sign-in method → Anonymous → Enable.", "error");
+    }
+
     if (localStorage.getItem("teacher_local_session") === "1") {
       window.location.href = "teacher-dashboard.html";
     }

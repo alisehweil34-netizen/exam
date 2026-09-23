@@ -33,7 +33,10 @@ function translateFirebaseError(error) {
     "auth/network-request-failed": "تعذر الاتصال بالخادم، تحقق من اتصال الإنترنت.",
     "auth/requires-recent-login": "لأسباب أمنية، يرجى تسجيل الخروج والدخول مجددًا قبل تنفيذ هذا الإجراء.",
     "auth/weak-password": "كلمة المرور ضعيفة جدًا، اختر كلمة مرور أقوى (6 أحرف على الأقل).",
-    "permission-denied": "ليست لديك صلاحية لتنفيذ هذا الإجراء.",
+    "auth/anonymous-disabled": "تسجيل الأستاذ محلي، لكن يجب تفعيل Anonymous Authentication في Firebase Console حتى تعمل لوحة الأستاذ مع قاعدة بيانات الامتحانات.",
+    "auth/operation-not-allowed": "يجب تفعيل Anonymous Authentication في Firebase Console حتى تعمل لوحة الأستاذ.",
+    "auth/admin-restricted-operation": "يجب تفعيل Anonymous Authentication في Firebase Console حتى تعمل لوحة الأستاذ.",
+    "permission-denied": "ليست لديك صلاحية لتنفيذ هذا الإجراء. تأكد من نشر firestore.rules وتفعيل Anonymous Authentication.",
     unavailable: "تعذر الاتصال بقاعدة البيانات، تحقق من اتصال الإنترنت.",
   };
   return map[code] || error?.message || "حدث خطأ غير متوقع، يرجى المحاولة مرة أخرى.";
