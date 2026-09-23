@@ -21,12 +21,12 @@
  */
 
 const firebaseConfig = {
-  apiKey: "ضع-API-KEY-هنا",
-  authDomain: "ضع-PROJECT-ID.firebaseapp.com",
-  projectId: "ضع-PROJECT-ID-هنا",
-  storageBucket: "ضع-PROJECT-ID.appspot.com",
-  messagingSenderId: "ضع-SENDER-ID-هنا",
-  appId: "ضع-APP-ID-هنا",
+  apiKey: "AIzaSyBUe2en1Z4IQ_dQ8O8BWxBR3UtiQrwFAP4",
+  authDomain: "aaaaaaaa-c48f5.firebaseapp.com",
+  projectId: "aaaaaaaa-c48f5",
+  storageBucket: "aaaaaaaa-c48f5.firebasestorage.app",
+  messagingSenderId: "653616188433",
+  appId: "1:653616188433:web:17ccc8c0f3c23807c235b0",
 };
 
 // تهيئة Firebase (يستخدم Firebase SDK عبر CDN بصيغة compat لسهولة
