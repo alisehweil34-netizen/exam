@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>دخول الطالب — نظام الامتحانات</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="center-page">
+    <div class="container-narrow">
+      <div class="login-hero">
+        <div class="mark">EN</div>
+        <h1>دخول الطالب</h1>
+        <p class="muted">أدخل اسمك الرباعي ورمز الامتحان الذي زوّدك به الأستاذ</p>
+      </div>
+
+      <div class="card">
+        <div id="alertBox" class="hidden"></div>
+
+        <form id="joinForm">
+          <div class="field">
+            <label for="fullName">الاسم الرباعي</label>
+            <input type="text" id="fullName" required placeholder="مثال: أحمد محمد علي حسن" />
+            <div class="hint">يُستخدم اسمك لربط نتيجتك بك. تأكد من كتابته بدقة وكاملًا.</div>
+          </div>
+          <div class="field">
+            <label for="examCode">رمز الامتحان (Exam Code)</label>
+            <input type="text" id="examCode" class="exam-code" required placeholder="EX-2026-01" />
+          </div>
+          <button type="submit" id="submitBtn" class="btn btn-primary btn-block">
+            <span id="btnText">دخول الامتحان</span>
+          </button>
+        </form>
+      </div>
+
+      <p class="muted small mt-16 text-center">
+        تنبيه: الاسم الرباعي وحده ليس وسيلة تحقق قوية من الهوية — احرص على
+        عدم مشاركة رمز الامتحان مع غيرك.
+      </p>
+
+      <div class="role-switch">
+        <span class="muted">هل أنت الأستاذ؟</span>
+        <a href="teacher-login.html">دخول الأستاذ</a>
+      </div>
+    </div>
+  </div>
+
+  <div id="duplicateModal" class="modal-backdrop hidden">
+    <div class="modal">
+      <h3>تنبيه</h3>
+      <p class="small">
+        يوجد طالب مسجّل مسبقًا بنفس الاسم في هذا الامتحان. إذا لم تكن قد دخلت
+        هذا الامتحان من قبل يمكنك المتابعة بأمان. إذا كنت قد دخلت مسبقًا، فلن
+        يُسمح لك بإنشاء محاولة ثانية.
+      </p>
+      <div class="actions">
+        <button class="btn btn-outline" id="cancelJoinBtn">إلغاء</button>
+        <button class="btn btn-primary" id="confirmJoinBtn">متابعة الدخول</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-config.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/student.js"></script>
+</body>
+</html>
