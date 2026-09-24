@@ -10,6 +10,7 @@ let rctx = {
   questions: [],
   answerKeys: {}, // questionId -> answerKey data
   attempts: [],
+  violationsByAttempt: {}, // attemptId -> [violation, ...] مرتّبة زمنيًا
 };
 
 guardTeacherPage(async (teacher) => {
@@ -57,8 +58,23 @@ async function loadAttempts() {
   const snap = await db.collection(COLLECTIONS.ATTEMPTS).where("examId", "==", rctx.examId).get();
   rctx.attempts = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   rctx.attempts.sort((a, b) => tsMsSafe(b.startedAt) - tsMsSafe(a.startedAt));
+
+  // سجل المخالفات (خروج من الامتحان، نسخ/لصق، محاولة دخول بعد التسليم...)
+  const vSnap = await db.collection(COLLECTIONS.VIOLATIONS).where("examId", "==", rctx.examId).get();
+  rctx.violationsByAttempt = {};
+  vSnap.docs.forEach((d) => {
+    const v = { id: d.id, ...d.data() };
+    (rctx.violationsByAttempt[v.attemptId] = rctx.violationsByAttempt[v.attemptId] || []).push(v);
+  });
+  Object.values(rctx.violationsByAttempt).forEach((list) => list.sort((a, b) => tsMsSafe(a.timestamp) - tsMsSafe(b.timestamp)));
+
   renderStats();
   renderAttemptsTable();
+}
+
+function violationTotal(attempt) {
+  const logged = (rctx.violationsByAttempt[attempt.id] || []).length;
+  return Math.max(Number(attempt.violationCount) || 0, logged);
 }
 
 function tsMsSafe(v) {
@@ -100,7 +116,7 @@ function renderAttemptsTable() {
       <td class="ltr">${formatDateTime(attempt.startedAt)}</td>
       <td class="ltr">${attempt.submittedAt ? formatDateTime(attempt.submittedAt) : "—"}</td>
       <td>${scoreLabel}</td>
-      <td>${attempt.violationCount || 0}</td>
+      <td>${violationTotal(attempt) > 0 ? `<span class="viol-badge">${violationTotal(attempt)}</span>` : "0"}</td>
       <td>${attemptStatusBadge(attempt.status)}</td>
     `;
     tr.addEventListener("click", () => showDetailView(attempt.id));
@@ -204,7 +220,8 @@ async function showDetailView(attemptId) {
   document.getElementById("detailView").classList.remove("hidden");
   document.getElementById("detailStudentName").textContent = attempt.studentName;
   document.getElementById("detailMeta").textContent =
-    `دخل: ${formatDateTime(attempt.startedAt)} — سلّم: ${attempt.submittedAt ? formatDateTime(attempt.submittedAt) : "لم يسلّم بعد"} — مخالفات: ${attempt.violationCount || 0}`;
+    `دخل: ${formatDateTime(attempt.startedAt)} — سلّم: ${attempt.submittedAt ? formatDateTime(attempt.submittedAt) : "لم يسلّم بعد"} — مخالفات: ${violationTotal(attempt)}`;
+  renderViolationLog(attempt);
 
   const answersSnap = await db.collection(COLLECTIONS.ANSWERS).where("attemptId", "==", attemptId).get();
   const answersByQ = {};
@@ -244,6 +261,27 @@ async function showDetailView(attemptId) {
     }
     container.appendChild(card);
   });
+}
+
+function renderViolationLog(attempt) {
+  const box = document.getElementById("detailViolations");
+  const list = rctx.violationsByAttempt[attempt.id] || [];
+  if (list.length === 0) {
+    box.innerHTML = `<div class="card"><h3 class="mb-0">سجل المخالفات</h3><p class="muted small mb-0 mt-8">لا توجد مخالفات مسجَّلة لهذا الطالب.</p></div>`;
+    return;
+  }
+  const items = list
+    .map((v) => {
+      const extras = [];
+      if (v.durationSec) extras.push(`مدة الغياب: ${formatCountdown(v.durationSec)}`);
+      if (v.attemptedName) extras.push(`الاسم المُدخل: ${escapeHtml(v.attemptedName)}${v.differentName ? " (اسم مختلف)" : ""}`);
+      return `<li>
+        <span><strong>${escapeHtml(violationLabelAr(v.type))}</strong>${extras.length ? `<br><span class="muted small">${extras.join(" — ")}</span>` : ""}</span>
+        <span class="when ltr">${formatDateTimeSec(v.timestamp)}</span>
+      </li>`;
+    })
+    .join("");
+  box.innerHTML = `<div class="card"><h3 class="mb-0">سجل المخالفات (${list.length})</h3><ul class="viol-list">${items}</ul></div>`;
 }
 
 function typeLabelAr(type) {

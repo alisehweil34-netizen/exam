@@ -30,6 +30,7 @@ const els = {
   cancelSubmitBtn: document.getElementById("cancelSubmitBtn"),
   confirmSubmitBtn: document.getElementById("confirmSubmitBtn"),
   violationToast: document.getElementById("violationToast"),
+  violationBadge: document.getElementById("violationBadge"),
 };
 
 let state = {
@@ -45,6 +46,10 @@ let state = {
   autoSubmitTriggered: false,
   saveTimers: {}, // questionId -> setTimeout handle لتأخير الحفظ (debounce)
   lastViolationAt: {}, // type -> timestamp لمنع تكرار تسجيل نفس المخالفة بسرعة
+  violationCount: 0, // عدّاد معروض للطالب
+  away: false, // هل الطالب خارج صفحة الامتحان الآن؟ (لتسجيل الخروج مرة واحدة فقط)
+  awayAt: 0,
+  awayViolation: null, // { ref, ready } لتحديث مدة الغياب عند العودة
 };
 
 function showBlocked(title, message) {
@@ -102,6 +107,7 @@ function showSubmitted(message) {
 
     const attemptRef = db.collection(COLLECTIONS.ATTEMPTS).doc(state.attemptId);
     let attemptSnap = await attemptRef.get();
+    const isResume = attemptSnap.exists; // هل هذه عودة لمحاولة قيد التنفيذ؟
 
     if (!attemptSnap.exists) {
       // لا توجد محاولة سابقة: تحقّق من نافذة الامتحان قبل إنشاء محاولة جديدة
@@ -149,7 +155,7 @@ function showSubmitted(message) {
     state.attempt = attemptSnap.data();
 
     if (state.attempt.status === "submitted" || state.attempt.status === "graded") {
-      showBlocked("لا يمكنك دخول هذا الامتحان مرة أخرى", "لديك بالفعل محاولة مسجَّلة ومكتملة لهذا الامتحان.");
+      showBlocked("لا يمكنك دخول هذا الامتحان مرة أخرى", "لقد سلّمت هذا الامتحان مسبقًا، ولا يمكنك الدخول إليه ثانيةً حتى لو غيّرت الاسم.");
       return;
     }
 
@@ -168,8 +174,13 @@ function showSubmitted(message) {
 
     await loadQuestionsAndAnswers();
     renderQuestions();
+    state.violationCount = Number(state.attempt.violationCount) || 0;
+    updateViolationBadge();
     attachMonitoring();
     startTimer();
+
+    // العودة لمحاولة قيد التنفيذ تعني أن الطالب غادر الصفحة أو أعاد تحميلها سابقًا
+    if (isResume) logViolation("RE_ENTRY");
 
     els.loading.classList.add("hidden");
     els.shell.classList.remove("hidden");
@@ -368,55 +379,119 @@ async function finalizeAttempt(reason) {
 function attachMonitoring() {
   applyAntiCheatUiRestrictions(document);
 
+  // الخروج من الصفحة: يُسجَّل مرة واحدة لكل "غياب" مع قياس مدة الغياب عند العودة
   document.addEventListener("visibilitychange", onVisibilityChange);
   window.addEventListener("blur", onWindowBlur);
+  window.addEventListener("focus", onReturn);
+  window.addEventListener("pageshow", onReturn);
   window.addEventListener("beforeunload", onBeforeUnload);
-  document.addEventListener("copy", () => logViolation("COPY_ATTEMPT"));
-  document.addEventListener("paste", () => logViolation("PASTE_ATTEMPT"));
-  document.addEventListener("contextmenu", () => logViolation("RIGHT_CLICK"));
+  window.addEventListener("pagehide", onPageHide);
+
+  // أفعال أخرى
+  document.addEventListener("copy", onCopy);
+  document.addEventListener("cut", onCopy);
+  document.addEventListener("paste", onPaste);
+  document.addEventListener("contextmenu", onContextMenu);
+  document.addEventListener("keydown", onKeyDown);
 }
 
 function detachMonitoring() {
   document.removeEventListener("visibilitychange", onVisibilityChange);
   window.removeEventListener("blur", onWindowBlur);
+  window.removeEventListener("focus", onReturn);
+  window.removeEventListener("pageshow", onReturn);
   window.removeEventListener("beforeunload", onBeforeUnload);
+  window.removeEventListener("pagehide", onPageHide);
+  document.removeEventListener("copy", onCopy);
+  document.removeEventListener("cut", onCopy);
+  document.removeEventListener("paste", onPaste);
+  document.removeEventListener("contextmenu", onContextMenu);
+  document.removeEventListener("keydown", onKeyDown);
+}
+
+function onCopy() { logViolation("COPY_ATTEMPT"); }
+function onPaste() { logViolation("PASTE_ATTEMPT"); }
+function onContextMenu() { logViolation("RIGHT_CLICK"); }
+
+function onKeyDown(e) {
+  const key = (e.key || "").toLowerCase();
+  const mod = e.ctrlKey || e.metaKey;
+  const blockedCombo = mod && ["p", "u", "s"].includes(key);
+  const devTools = e.key === "F12" || (mod && e.shiftKey && ["i", "j", "c"].includes(key));
+  if (blockedCombo || devTools) logViolation("SHORTCUT_BLOCKED");
+}
+
+/** بداية غياب: يُسجَّل مرة واحدة حتى لو أطلق المتصفح أكثر من حدث (blur + visibilitychange) */
+function onLeave(type) {
+  if (state.away) return;
+  if (!state.attemptId || state.attempt.status !== "in_progress") return;
+  state.away = true;
+  state.awayAt = Date.now();
+  state.awayViolation = logViolation(type, {}, { throttle: false });
+  flashToast("تحذير: تم تسجيل خروجك من صفحة الامتحان كمحاولة غش.");
+}
+
+/** نهاية الغياب: تُحسب المدة وتُضاف لسجل المخالفة */
+function onReturn() {
+  if (!state.away) return;
+  if (document.hidden || (document.hasFocus && !document.hasFocus())) return;
+  const seconds = Math.max(1, Math.round((Date.now() - state.awayAt) / 1000));
+  const rec = state.awayViolation;
+  state.away = false;
+  state.awayViolation = null;
+  if (rec) {
+    rec.ready
+      .then(() => rec.ref.update({ durationSec: seconds }))
+      .catch((err) => console.warn("تعذّر تحديث مدة الغياب", err));
+  }
+  flashToast(`تم تسجيل غيابك عن الامتحان لمدة ${seconds} ثانية.`);
 }
 
 function onVisibilityChange() {
-  if (document.hidden) {
-    logViolation("TAB_SWITCH");
-    flashToast("تحذير: تم تسجيل مغادرة صفحة الامتحان.");
-  }
+  if (document.hidden) onLeave("TAB_SWITCH");
+  else onReturn();
 }
 
 function onWindowBlur() {
-  logViolation("WINDOW_BLUR");
+  onLeave("WINDOW_BLUR");
 }
 
 function onBeforeUnload(e) {
   // محاولة تسجيل مخالفة قبل مغادرة الصفحة. لا يمكن ضمان اكتمال الطلب
-  // لأن المتصفح قد يُنهي الصفحة قبل وصول البيانات للخادم — هذا حدّ
-  // معروف من حدود منصات الويب وليس خللًا في الكود.
+  // لأن المتصفح قد يُنهي الصفحة قبل وصول البيانات للخادم — لذلك تُسجَّل أيضًا
+  // مخالفة RE_ENTRY عند عودة الطالب للامتحان، وهي التي يُعتمد عليها فعليًا.
   logViolation("PAGE_UNLOAD_ATTEMPT");
   e.preventDefault();
   e.returnValue = "";
 }
 
-function logViolation(type) {
+function onPageHide() {
+  logViolation("PAGE_UNLOAD_ATTEMPT");
+}
+
+/**
+ * يسجّل مخالفة في قاعدة البيانات ويزيد العدّاد.
+ * يُرجع { ref, ready } كي يمكن تحديث المخالفة لاحقًا (مثل مدة الغياب).
+ */
+function logViolation(type, extra = {}, { throttle = true } = {}) {
+  if (!state.attemptId || !state.attempt || state.attempt.status !== "in_progress") return null;
+
   const now = Date.now();
-  const last = state.lastViolationAt[type] || 0;
-  if (now - last < 3000) return; // تجنّب تسجيل نفس المخالفة عشرات المرات في ثوانٍ
-  state.lastViolationAt[type] = now;
+  if (throttle) {
+    const last = state.lastViolationAt[type] || 0;
+    if (now - last < 3000) return null; // تجنّب تسجيل نفس المخالفة عشرات المرات في ثوانٍ
+    state.lastViolationAt[type] = now;
+  }
 
-  if (!state.attemptId || state.attempt.status !== "in_progress") return;
-
-  db.collection(COLLECTIONS.VIOLATIONS)
-    .add({
+  const ref = db.collection(COLLECTIONS.VIOLATIONS).doc();
+  const ready = ref
+    .set({
       attemptId: state.attemptId,
       examId: state.examId,
       studentUid: state.uid,
       type,
       timestamp: serverTimestamp(),
+      ...extra,
     })
     .catch((err) => console.warn("تعذّر تسجيل المخالفة", err));
 
@@ -427,6 +502,17 @@ function logViolation(type) {
       lastActivityAt: serverTimestamp(),
     })
     .catch((err) => console.warn("تعذّر تحديث عدّاد المخالفات", err));
+
+  state.violationCount += 1;
+  updateViolationBadge();
+  return { ref, ready };
+}
+
+function updateViolationBadge() {
+  if (!els.violationBadge) return;
+  const n = state.violationCount;
+  els.violationBadge.textContent = `مخالفات مسجَّلة: ${n}`;
+  els.violationBadge.classList.toggle("zero", n === 0);
 }
 
 function flashToast(message) {

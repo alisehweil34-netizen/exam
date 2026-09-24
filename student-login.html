@@ -19,6 +19,20 @@
         <div id="alertBox" class="hidden"></div>
 
         <form id="joinForm">
+        <div class="rules-box" id="rulesBox">
+          <h3>⚠️ تعليمات مهمة قبل الدخول</h3>
+          <ul>
+            <li>أي <strong>خروج من صفحة الامتحان</strong> (تبديل التبويب أو التطبيق، تصغير المتصفح، فتح نافذة أخرى، إغلاق الصفحة أو تحديثها أو الرجوع منها) <strong>يُكتشف ويُسجَّل تلقائيًا كمحاولة غش</strong>، ويظهر للأستاذ مع وقت الخروج ومدة الغياب.</li>
+            <li>النسخ واللصق والنقر بالزر الأيمن ومحاولة فتح أدوات المطوّر تُسجَّل أيضًا.</li>
+            <li>لديك <strong>محاولة واحدة فقط</strong>. بعد تسليم الامتحان لا يمكنك الدخول إليه مرة أخرى من هذا الجهاز، <strong>حتى لو غيّرت الاسم</strong>، وأي محاولة لذلك تُسجَّل أيضًا.</li>
+            <li>عند انتهاء الوقت يُسلَّم الامتحان تلقائيًا.</li>
+          </ul>
+          <label class="consent">
+            <input type="checkbox" id="agreeRules" />
+            <span>قرأتُ التعليمات أعلاه وأوافق عليها</span>
+          </label>
+        </div>
+
           <div class="field">
             <label for="fullName">الاسم الرباعي</label>
             <input type="text" id="fullName" required placeholder="مثال: أحمد محمد علي حسن" />
@@ -28,7 +42,7 @@
             <label for="examCode">رمز الامتحان (Exam Code)</label>
             <input type="text" id="examCode" class="exam-code" required placeholder="EX-2026-01" />
           </div>
-          <button type="submit" id="submitBtn" class="btn btn-primary btn-block">
+          <button type="submit" id="submitBtn" class="btn btn-primary btn-block" disabled>
             <span id="btnText">دخول الامتحان</span>
           </button>
         </form>

@@ -140,3 +140,32 @@ function validateExamWindow(exam) {
   }
   return { ok: true };
 }
+
+/* ===================== سجل المخالفات (مشترك بين الطالب والأستاذ) ===================== */
+
+const VIOLATION_LABELS = {
+  TAB_SWITCH: "غادر صفحة الامتحان (تبديل تبويب/تطبيق أو تصغير المتصفح)",
+  WINDOW_BLUR: "خرج من نافذة الامتحان (فقدان التركيز)",
+  PAGE_UNLOAD_ATTEMPT: "حاول إغلاق صفحة الامتحان أو تحديثها أو الرجوع منها",
+  RE_ENTRY: "عاد إلى الامتحان بعد مغادرة الصفحة أو إعادة تحميلها",
+  COPY_ATTEMPT: "حاول نسخ نص",
+  PASTE_ATTEMPT: "حاول لصق نص",
+  RIGHT_CLICK: "ضغط بالزر الأيمن",
+  SHORTCUT_BLOCKED: "استخدم اختصارًا ممنوعًا (أدوات المطوّر/طباعة/حفظ/عرض المصدر)",
+  REENTRY_AFTER_SUBMIT: "حاول الدخول إلى الامتحان مرة أخرى بعد التسليم",
+};
+
+function violationLabelAr(type) {
+  return VIOLATION_LABELS[type] || type;
+}
+
+/** تاريخ ووقت بالثواني (مفيد لسجل المخالفات) */
+function formatDateTimeSec(value) {
+  if (!value) return "—";
+  const date = value.toDate ? value.toDate() : new Date(value);
+  if (isNaN(date.getTime())) return "—";
+  return date.toLocaleString("ar-EG", {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+}

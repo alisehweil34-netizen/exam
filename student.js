@@ -16,16 +16,28 @@
   const cancelJoinBtn = document.getElementById("cancelJoinBtn");
   const confirmJoinBtn = document.getElementById("confirmJoinBtn");
 
+  const agreeRules = document.getElementById("agreeRules");
+
   let pendingJoin = null; // يحمل بيانات الانضمام أثناء انتظار تأكيد المستخدم لتحذير الاسم المكرر
 
+  // زر الدخول يبقى معطّلًا حتى يوافق الطالب على التعليمات
+  if (agreeRules) {
+    agreeRules.addEventListener("change", () => { submitBtn.disabled = !agreeRules.checked; });
+  }
+
   function setLoading(isLoading, label) {
-    submitBtn.disabled = isLoading;
+    submitBtn.disabled = isLoading || (agreeRules ? !agreeRules.checked : false);
     btnText.innerHTML = isLoading ? `<span class="spinner"></span> ${label || "جاري التحقق..."}` : "دخول الامتحان";
   }
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     clearAlert(alertBox);
+
+    if (agreeRules && !agreeRules.checked) {
+      showAlert(alertBox, "يجب الموافقة على التعليمات قبل الدخول للامتحان.", "error");
+      return;
+    }
 
     const fullName = document.getElementById("fullName").value.trim().replace(/\s+/g, " ");
     const examCodeRaw = document.getElementById("examCode").value.trim();
@@ -63,6 +75,32 @@
       const exam = examDoc.data();
       const examId = examDoc.id;
 
+      // (1) هل لهذا الجهاز محاولة سابقة في هذا الامتحان؟ المفتاح هو الجهاز وليس الاسم،
+      //     لذلك لا يفيد تغيير الاسم بعد التسليم.
+      const uid = auth.currentUser.uid;
+      const attemptRef = db.collection(COLLECTIONS.ATTEMPTS).doc(`${examId}_${uid}`);
+      const attemptSnap = await attemptRef.get();
+      const prevAttempt = attemptSnap.exists ? attemptSnap.data() : null;
+
+      if (prevAttempt && (prevAttempt.status === "submitted" || prevAttempt.status === "graded")) {
+        await logReentryAfterSubmit(examId, uid, prevAttempt, fullName);
+        showAlert(
+          alertBox,
+          "لقد سلّمت هذا الامتحان مسبقًا من هذا الجهاز، ولا يمكنك الدخول إليه مرة أخرى حتى لو غيّرت الاسم. تم تسجيل هذه المحاولة.",
+          "error"
+        );
+        setLoading(false);
+        return;
+      }
+
+      // (2) محاولة قيد التنفيذ: يتابع الطالب بالاسم الأصلي المسجَّل (لا يُسمح بتغييره)
+      if (prevAttempt) {
+        await upsertStudentProfile(uid, prevAttempt.studentName);
+        goToExam(examId);
+        return;
+      }
+
+      // (3) دخول جديد: تحقق من نافذة الامتحان
       const check = validateExamWindow(exam);
       if (!check.ok) {
         showAlert(alertBox, check.message, "error");
@@ -70,7 +108,7 @@
         return;
       }
 
-      await upsertStudentProfile(auth.currentUser.uid, fullName);
+      await upsertStudentProfile(uid, fullName);
 
       // فحص توعوي (وليس أمنيًا) عن وجود اسم مطابق لطالب آخر في هذا الامتحان
       const normalized = normalizeName(fullName);
@@ -80,7 +118,7 @@
         .where("studentNameNormalized", "==", normalized)
         .limit(3)
         .get();
-      const hasOtherStudentSameName = dupSnap.docs.some((d) => d.data().studentUid !== auth.currentUser.uid);
+      const hasOtherStudentSameName = dupSnap.docs.some((d) => d.data().studentUid !== uid);
 
       pendingJoin = { examId };
 
@@ -108,6 +146,25 @@
     duplicateModal.classList.add("hidden");
     if (pendingJoin) goToExam(pendingJoin.examId);
   });
+
+  /** يسجّل محاولة الدخول بعد التسليم في سجل مخالفات المحاولة الأصلية ليراها الأستاذ */
+  async function logReentryAfterSubmit(examId, uid, prevAttempt, typedName) {
+    try {
+      const attemptId = `${examId}_${uid}`;
+      await db.collection(COLLECTIONS.VIOLATIONS).add({
+        attemptId,
+        examId,
+        studentUid: uid,
+        type: "REENTRY_AFTER_SUBMIT",
+        attemptedName: typedName,
+        differentName: normalizeName(typedName) !== normalizeName(prevAttempt.studentName),
+        timestamp: serverTimestamp(),
+      });
+      await db.collection(COLLECTIONS.ATTEMPTS).doc(attemptId).update({ violationCount: localIncrement(1) });
+    } catch (e) {
+      console.warn("تعذّر تسجيل محاولة الدخول بعد التسليم", e);
+    }
+  }
 
   function goToExam(examId) {
     window.location.href = `exam.html?exam=${encodeURIComponent(examId)}`;
